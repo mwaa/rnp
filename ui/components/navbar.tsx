@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { MenuButton } from "@/components/menu-button";
+import dynamic from "next/dynamic";
 
 const navBarLinks = [
   {
@@ -22,6 +22,14 @@ const navBarLinks = [
     href: "/blinks",
   },
 ];
+
+export const WalletButton = dynamic(
+  async () =>
+    (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
+  {
+    ssr: false,
+  },
+);
 
 export function Navbar() {
   return (
@@ -52,7 +60,7 @@ export function Navbar() {
             />
           ))}
         </div>
-        <WalletMultiButton />
+        <WalletButton />
       </div>
     </nav>
   );

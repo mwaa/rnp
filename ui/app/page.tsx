@@ -1,10 +1,11 @@
 "use client";
 
-import { Blink, useAction } from "@dialectlabs/blinks";
-import { useActionSolanaWalletAdapter } from "@dialectlabs/blinks/hooks/solana";
+import { Blink, useBlink } from "@dialectlabs/blinks";
+import { useBlinkSolanaWalletAdapter } from "@dialectlabs/blinks/hooks/solana";
 import "@dialectlabs/blinks/index.css";
 
 import { StepCard } from "../components/step-card";
+import { useConnection } from "@solana/wallet-adapter-react";
 
 // Text for the steps on the left side of the page for the user to follow
 const steps = [
@@ -29,16 +30,17 @@ const steps = [
 ];
 
 export default function Home() {
+  const { connection } = useConnection();
+
   // ConnectKit modal
   const actionApiUrl = "http://localhost:3000/api/actions/donate-sol";
 
   // Adapter, used to connect to the wallet
-  const { adapter } = useActionSolanaWalletAdapter(
-    "https://api.devnet.solana.com"
+  const { adapter } = useBlinkSolanaWalletAdapter(
+    connection.rpcEndpoint,
   );
-
   // Action we want to execute in the Blink
-  const { action, isLoading } = useAction({ url: actionApiUrl });
+  const { isLoading, blink } = useBlink({ url: actionApiUrl });
 
   return (
     <main className="grid grid-cols-[2fr_3fr] h-[calc(100vh-64px)]">
@@ -60,15 +62,21 @@ export default function Home() {
       </div>
 
       <div className=" flex items-center justify-center border border-gray-600 rounded-[10px] m-4">
-        {isLoading || !action ? (
+        {isLoading || !blink ? (
           <span>Loading</span>
         ) : (
           <div className="w-full max-w-lg">
             <Blink
-              action={action}
+              blink={blink}
               adapter={adapter}
               securityLevel="all"
               stylePreset="x-dark"
+              callbacks={
+                {
+                  onActionError: (error) => {  console.log("error", error); },
+                  onActionComplete: (response) => { console.log("response", response) },
+                }
+              }
             />
           </div>
         )}

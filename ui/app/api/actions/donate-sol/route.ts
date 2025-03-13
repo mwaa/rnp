@@ -21,8 +21,14 @@ import {
 // CAIP-2 format for Solana
 const blockchain = BLOCKCHAIN_IDS.devnet;
 
+const RPC_ENDPOINT =  process.env.NEXT_PUBLIC_RPC_ENDPOINT;
+
+if (!RPC_ENDPOINT) {
+  throw new Error("RPC_ENDPOINT is required");
+}
+
 // Create a connection to the Solana blockchain
-const connection = new Connection("https://api.devnet.solana.com");
+const connection = new Connection(String(RPC_ENDPOINT));
 
 // Set the donation wallet address
 const donationWallet = process.env.DONATION_WALLET_ADDRESS;
@@ -30,8 +36,8 @@ const donationWallet = process.env.DONATION_WALLET_ADDRESS;
 // Create headers with CAIP blockchain ID
 const headers = {
   ...ACTIONS_CORS_HEADERS,
-  "x-blockchain-ids": blockchain,
-  "x-action-version": "2.4",
+  // "x-blockchain-ids": blockchain,
+  // "x-action-version": "2.4",
 };
 
 // OPTIONS endpoint is required for CORS preflight requests
@@ -164,6 +170,7 @@ const prepareTransaction = async (
     lamports: amount * LAMPORTS_PER_SOL,
   });
 
+  console.log()
   // Get the latest blockhash
   const { blockhash } = await connection.getLatestBlockhash();
 

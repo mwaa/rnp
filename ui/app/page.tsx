@@ -33,7 +33,8 @@ export default function Home() {
   const { connection } = useConnection();
 
   // ConnectKit modal
-  const actionApiUrl = "http://localhost:3000/api/actions/donate-sol";
+  // const actionApiUrl = "http://localhost:3000/api/actions/donate-sol";
+  const actionApiUrl = "http://localhost:3000/api/actions/network";
 
   // Adapter, used to connect to the wallet
   const { adapter } = useBlinkSolanaWalletAdapter(

@@ -19,6 +19,7 @@
       }
     ],
     "paths": {
+      "@/project/anchor": ["../anchor/app"],
       "@/*": ["./*"]
     }
   },

@@ -31,3 +31,10 @@ export const projectFormSchema = z.object({
   }, {
     message: "Please fill in all required fields for enabled boost settings",
   });
+
+
+export const blinkFormSchema = z.object({
+  project: z.string().min(1, "Please select a project"),
+  methodSignature: z.string().min(1, "Please select a method"),
+  rewardShare: z.number().min(0).max(80, "Maximum share is 80%"),
+});

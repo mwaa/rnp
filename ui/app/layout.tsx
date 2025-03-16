@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 // Providers are used to wrap the app in Wagmi and ConnectKit
 import AppWalletProvider from "@/components/AppWalletProvider";
 import "./globals.css";
+import { ReactQueryProvider } from "@/components/react-query";
 
 export const metadata: Metadata = {
   title: "Referral Network Builder",
@@ -21,10 +22,12 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body>
-        <AppWalletProvider>
-          <Navbar />
-          {children}
-        </AppWalletProvider>
+        <ReactQueryProvider>
+          <AppWalletProvider>
+            <Navbar />
+            {children}
+          </AppWalletProvider>
+        </ReactQueryProvider>
         <Toaster />
       </body>
     </html>

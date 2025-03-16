@@ -16,9 +16,7 @@ import {
 } from "@solana/web3.js";
 
 import * as anchor from "@coral-xyz/anchor";
-
-
-import { HswIDL } from "@/project/anchor"; // Adjust path if necessary
+import { getBlink } from "@/actions/blinks";
 
 // CAIP-2 format for Solana
 // const blockchain = BLOCKCHAIN_IDS.devnet;
@@ -48,8 +46,6 @@ export const OPTIONS = async () => {
 export const GET = async (req: Request, { params }: { params: Promise<{ signature: string }> }) => {
 
     const { signature } = await params;
-
-    console.log("\nFULL /api/actions/network", signature, "\n");
 
     // This JSON is used to render the Blink UI
     const response: ActionGetResponse = {
@@ -83,23 +79,21 @@ export const POST = async (req: Request, { params }: { params: Promise<{ signatu
 
         const { signature } = await params;
 
+        const blinkData = await getBlink(signature)
+
         console.log("\nFULL /api/actions/network", signature, "\n");
 
         // Parse request body to get user's public key
         const request: ActionPostRequest = await req.json();
         const userPublicKey = new PublicKey(request.account);
 
-        // TODO:: db call to get the IDL string
-        // {
-        //     network: "devnet",
-        //     publicUrl: "joinKub8s",
-        //     idlString: "GJQ6Z",
-        //     methodName: "join_sonic_world",
-        // }
-
+        if (!blinkData) {
+            throw new Error("Blink not found");
+        }
+       
         // Step 1: Prepare the transaction
         const transaction = await buildTransactionFromIDL(
-            JSON.stringify(HswIDL),
+            blinkData.idl_content,
             connection,
             userPublicKey
         );
@@ -174,11 +168,9 @@ function determineAccountType(account: any): AccountType {
     return AccountType.SIGNER; // Default fallback
 }
 
-const fetchMethodConfig = async (idl_string: string, method_name: string): Promise<MethodConfig> => {
+const fetchMethodConfig = async (idl: any, method_name: string): Promise<MethodConfig> => {
     try {
-        // Parse the IDL JSON
-        const idl = JSON.parse(idl_string);
-        
+        console.log("Parsing IDL...", idl);
         // Find the instruction that matches the method name
         const instruction = idl.instructions.find((instr: any) => instr.name === method_name);
         
@@ -230,12 +222,12 @@ const fetchMethodConfig = async (idl_string: string, method_name: string): Promi
 };
 
 async function buildTransactionFromIDL(
-    idl_string: string,
+    idl_json: any,
     connection: Connection,
     signerPublicKey: PublicKey
 ): Promise<VersionedTransaction> {
     // 1. Fetch the configuration from database
-    const config = await fetchMethodConfig(idl_string, "join_sonic_world");
+    const config = await fetchMethodConfig(idl_json, "join_sonic_world");
 
     // 2. Initialize program
     const provider = new anchor.AnchorProvider(
@@ -243,7 +235,7 @@ async function buildTransactionFromIDL(
         { publicKey: signerPublicKey } as any,
         { commitment: "processed" }
     );
-    const program = new anchor.Program(JSON.parse(idl_string) as any, provider);
+    const program = new anchor.Program(idl_json as any, provider);
 
     // 3. Prepare accounts object
     const accountsObj: Record<string, any> = {};

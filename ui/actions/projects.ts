@@ -66,7 +66,7 @@ export async function saveProject(formData: FormData): Promise<boolean> {
 export async function getProjects() {
   try {
     const query = `
-      SELECT project_name, method_signatures FROM projects
+      SELECT program_id, project_name, method_signatures FROM projects
     `;
     return await sql(query);
   } catch (error) {

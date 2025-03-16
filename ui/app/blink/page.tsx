@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -26,52 +26,91 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ArrowLeft, Copy } from "lucide-react";
 import Link from "next/link";
-
-const formSchema = z.object({
-  project: z.string().min(1, "Please select a project"),
-  methodSignature: z.string().min(1, "Please select a method"),
-  rewardShare: z.number().min(0).max(80, "Maximum share is 80%"),
-});
-
-// Mock data - replace with actual data from your backend
-const mockProjects = [
-  { id: "1", name: "Project A" },
-  { id: "2", name: "Project B" },
-];
-
-const mockMethods = [
-  { id: "1", name: "initialize" },
-  { id: "2", name: "deposit" },
-];
+import { blinkFormSchema } from "@/lib/types/form";
+import { createBlink } from "@/actions/blinks";
+import { useQuery } from "@tanstack/react-query";
+import { getProjects } from "@/actions/projects";
 
 export default function CreateBlink() {
+  const { isPending, error, data: listedProjects = [] } = useQuery({
+    queryKey: ["getProjects"],
+    queryFn: () => {
+        return getProjects();
+    }
+  });
+
   const { connected } = useWallet();
   const [referralCode, setReferralCode] = useState("");
   const [estimatedRewards, setEstimatedRewards] = useState({
     referrer: 0,
     referee: 0,
   });
+  const [availableMethodSignatures, setAvailableMethodSignatures] = useState<string[]>([]);
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const form = useForm<z.infer<typeof blinkFormSchema>>({
+    resolver: zodResolver(blinkFormSchema),
     defaultValues: {
       rewardShare: 50,
     },
   });
 
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+  // Watch for changes to the project field
+  const selectedProjectId = form.watch("project");
+
+  // Update available methods when project selection changes
+  useEffect(() => {
+    if (selectedProjectId) {
+      // Find the selected project in mock data
+      const selectedProject = listedProjects.find(
+        (project) => project.program_id === selectedProjectId
+      );
+      
+      if (selectedProject) {
+        // Update available method signatures
+        setAvailableMethodSignatures(selectedProject.method_signatures);
+        
+        // Reset method signature selection when project changes
+        form.setValue("methodSignature", "");
+      } else {
+        setAvailableMethodSignatures([]);
+      }
+    } else {
+      setAvailableMethodSignatures([]);
+    }
+  }, [selectedProjectId, form]);
+
+  const onSubmit = async (values: z.infer<typeof blinkFormSchema>) => {
     try {
-      // TODO: Implement blink creation logic
-      const mockCode = "REF" + Math.random().toString(36).substring(2, 8);
-      setReferralCode(mockCode);
+      // TODO: more robust implementation
+      const refCode = "ref" + Math.random().toString(36).substring(2, 8);
+      setReferralCode(refCode);
+      
+      // Calculate estimated rewards based on the reward share
+      const totalReward = 1.0; // Example total reward
+      const refereeShare = (values.rewardShare / 100) * totalReward;
+      const referrerShare = totalReward - refereeShare;
+      
       setEstimatedRewards({
-        referrer: 0.5,
-        referee: 0.5,
+        referrer: parseFloat(referrerShare.toFixed(4)),
+        referee: parseFloat(refereeShare.toFixed(4)),
       });
-      toast.success("Success",{
+
+      // TODO:: save to database
+      const success = createBlink({
+        refCode,
+        programId: values.project,
+        methodSignature: values.methodSignature,
+      });
+
+      if (!success) {
+        throw new Error("Failed to create blink");
+      }
+      
+      toast.success("Success", {
         description: "Blink created successfully",
       });
     } catch (error) {
+      console.error("Error creating blink:", error);
       toast.error("Error", {
         description: "Failed to create blink",
       });
@@ -117,9 +156,9 @@ export default function CreateBlink() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {mockProjects.map((project) => (
-                              <SelectItem key={project.id} value={project.id}>
-                                {project.name}
+                            {listedProjects.map((project) => (
+                              <SelectItem key={project.program_id} value={project.program_id}>
+                                {project.project_name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -138,16 +177,21 @@ export default function CreateBlink() {
                         <Select
                           onValueChange={field.onChange}
                           defaultValue={field.value}
+                          disabled={availableMethodSignatures.length === 0}
                         >
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select a method" />
+                              <SelectValue placeholder={
+                                availableMethodSignatures.length === 0
+                                  ? "Select a project first"
+                                  : "Select a method"
+                              } />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {mockMethods.map((method) => (
-                              <SelectItem key={method.id} value={method.id}>
-                                {method.name}
+                            {availableMethodSignatures.map((method) => (
+                              <SelectItem key={method} value={method}>
+                                {method}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -179,7 +223,11 @@ export default function CreateBlink() {
                     )}
                   />
 
-                  <Button type="submit" className="w-full">
+                  <Button 
+                    type="submit" 
+                    className="w-full"
+                    disabled={!selectedProjectId || !form.watch("methodSignature")}
+                  >
                     Generate Blink
                   </Button>
                 </form>

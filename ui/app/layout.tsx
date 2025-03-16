@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { Navbar } from "@/components/navbar";
+import { Toaster } from "@/components/ui/sonner";
 
 // Providers are used to wrap the app in Wagmi and ConnectKit
 import AppWalletProvider from "@/components/AppWalletProvider";
@@ -18,12 +19,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body>
         <AppWalletProvider>
           <Navbar />
           {children}
         </AppWalletProvider>
+        <Toaster />
       </body>
     </html>
   );

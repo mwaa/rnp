@@ -9,13 +9,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -23,9 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { ArrowRight, ArrowLeft, HelpCircle, Loader2, X } from "lucide-react";
 import Link from "next/link";
 import {
   Tooltip,
@@ -33,67 +32,27 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { HelpCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Switch } from "@/components/ui/switch";
+import { projectFormSchema } from "@/lib/types/form";
+import { saveProject } from "@/actions/projects";
 
-const formSchema = z.object({
-  idlFile: z.any(),
-  methodSignatures: z.array(z.string()).min(1, "Select at least one method"),
-  escrowAmount: z.number().min(0.1, "Minimum 0.1 SOL required"),
-  strategy: z.enum(["short_term", "long_term"]),
-  referralReward: z.number().min(0.01, "Minimum reward amount is 0.01").optional(),
-  duration: z.number().optional(),
-  dripAmount: z.number().optional(),
-  baseReward: z.number().min(0.01, "Minimum reward amount is 0.01"),
-  volumeThreshold: z.number().min(1, "Minimum threshold is 1"),
-  volumeBonus: z.number().min(0.01, "Minimum bonus amount is 0.01"),
-  timeTarget: z.number().min(1, "Minimum target is 1"),
-  timeWindow: z.number().min(1, "Minimum window is 1 minute"),
-  timeBonus: z.number().min(0.01, "Minimum bonus amount is 0.01"),
-}).refine((data) => {
-  if (data.strategy === "short_term") {
-    return data.referralReward !== undefined && data.referralReward > 0;
-  }
-  return true;
-}, {
-  message: "Referral reward amount is required for short-term strategy",
-  path: ["referralReward"],
-});
 
 export default function ProjectRegistration() {
+  const [currentStep, setCurrentStep] = useState(1);
   const [idlMethods, setIdlMethods] = useState<string[]>([]);
-  const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const form = useForm<z.infer<typeof projectFormSchema>>({
+    resolver: zodResolver(projectFormSchema),
     defaultValues: {
-      strategy: "short_term",
+      methodSignatures: [],
+      methodSettings: [],
       escrowAmount: 1,
-      referralReward: 0.1,
-      baseReward: 0.1,
-      volumeThreshold: 10,
-      volumeBonus: 0.05,
-      timeTarget: 5,
-      timeWindow: 60,
-      timeBonus: 0.1,
     },
+    mode: "onChange",
   });
-
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    try {
-      // TODO: Implement project registration logic
-      console.log(values);
-      toast({
-        title: "Success",
-        description: "Project registered successfully",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to register project",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleIdlUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -102,14 +61,13 @@ export default function ProjectRegistration() {
       reader.onload = (e) => {
         try {
           const idl = JSON.parse(e.target?.result as string);
-          // Extract method signatures from IDL
           const methods = idl.instructions.map((i: any) => i.name);
           setIdlMethods(methods);
+          form.setValue("idlFile", file);
+          form.trigger("idlFile");
         } catch (error) {
-          toast({
-            title: "Error",
-            description: "Invalid IDL file",
-            variant: "destructive",
+          toast.error("Error", {
+            description: "Invalid IDL file"
           });
         }
       };
@@ -117,10 +75,542 @@ export default function ProjectRegistration() {
     }
   };
 
-  const strategy = form.watch("strategy");
+  const initializeMethodSettings = (methods: string[]) => {
+    const settings = methods.map(method => ({
+      methodName: method,
+      strategy: "short_term" as const,
+      referralReward: 0.0001,
+      enableVolumeBoost: false,
+      enableTimeBoost: false,
+    }));
+    form.setValue("methodSettings", settings);
+  };
+
+  const validateCurrentStep = async () => {
+    if (currentStep === 1) {
+      const isValid = await form.trigger(["idlFile", "methodSignatures"]);
+      if (isValid) {
+        const methods = form.getValues("methodSignatures");
+        initializeMethodSettings(methods);
+      }
+      return isValid;
+    }
+    
+    if (currentStep === 2) {
+      return form.trigger("methodSettings");
+    }
+    
+    if (currentStep === 3) {
+      return form.trigger("escrowAmount");
+    }
+
+    return false;
+  };
+
+  const onSubmit = async (values: z.infer<typeof projectFormSchema>) => {
+    if (currentStep < 3) {
+      const isValid = await validateCurrentStep();
+      if (isValid) {
+        setCurrentStep(prev => prev + 1);
+      }
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // TODO: Implement project registration logic
+      console.log(values);
+      // Call the server action to register the project
+      const success = await saveProject(values);
+      if (success) {
+        toast.success("Success", {
+          description: "Project registered successfully",
+        });
+      } else {
+        throw new Error("Failed to register project");
+      }
+    } catch (error) {
+      toast.error("Error", {
+        description: "Failed to register project",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleBack = () => {
+    setCurrentStep(prev => Math.max(1, prev - 1));
+  };
+
+  const renderStepIndicator = () => (
+    <div className="flex items-center justify-center mb-6">
+      {[1, 2, 3].map((step) => (
+        <div key={step} className="flex items-center">
+          <div
+            className={`w-8 h-8 rounded-full flex items-center justify-center ${
+              step === currentStep
+                ? "bg-primary text-primary-foreground"
+                : step < currentStep
+                ? "bg-primary/20 text-primary"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {step}
+          </div>
+          {step < 3 && (
+            <div
+              className={`w-16 h-1 ${
+                step < currentStep ? "bg-primary/20" : "bg-muted"
+              }`}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderStep1 = () => {
+
+    return (
+      <div className="space-y-6">
+        <FormField
+          control={form.control}
+          name="projectName"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Project Name</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="Enter project name"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="idlFile"
+          render={() => (
+            <FormItem>
+              <FormLabel>IDL File</FormLabel>
+              <FormControl>
+                <Input
+                  type="file"
+                  accept=".json"
+                  onChange={handleIdlUpload}
+                />
+              </FormControl>
+              <FormDescription>
+                Upload your program&apos;s IDL file
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="methodSignatures"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Rewardable Methods</FormLabel>
+              <div className="space-y-2">
+                <Select
+                  onValueChange={(value) => {
+                    if (!field.value.includes(value)) {
+                      const newMethods = [...field.value, value];
+                      field.onChange(newMethods);
+                      form.trigger("methodSignatures");
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select methods" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {idlMethods
+                      .filter(method => !field.value.includes(method))
+                      .map((method) => (
+                        <SelectItem key={method} value={method}>
+                          {method}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="flex flex-wrap gap-2">
+                  {field.value.map((method) => (
+                    <Badge
+                      key={method}
+                      variant="secondary"
+                      className="flex items-center gap-1"
+                    >
+                      {method}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newMethods = field.value.filter((m) => m !== method);
+                          field.onChange(newMethods);
+                          form.trigger("methodSignatures");
+                        }}
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+    );
+  };
+
+  const renderStep2 = () => {
+    const selectedMethods = form.watch("methodSignatures");
+    
+    return (
+      <div className="space-y-8">
+        {selectedMethods.map((methodName, index) => (
+          <div key={methodName} className="space-y-6 border-b pb-6 last:border-0">
+            <h3 className="text-lg font-semibold">{methodName}</h3>
+            
+            <FormField
+              control={form.control}
+              name={`methodSettings.${index}.strategy`}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Reward Strategy</FormLabel>
+                  <FormControl>
+                    <RadioGroup
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      className="flex space-x-4"
+                    >
+                      <FormItem className="flex items-center space-x-2">
+                        <FormControl>
+                          <RadioGroupItem value="short_term" />
+                        </FormControl>
+                        <FormLabel className="font-normal">
+                          Short Term
+                        </FormLabel>
+                      </FormItem>
+                      <FormItem className="flex items-center space-x-2">
+                        <FormControl>
+                          <RadioGroupItem value="long_term" />
+                        </FormControl>
+                        <FormLabel className="font-normal">
+                          Long Term
+                        </FormLabel>
+                      </FormItem>
+                    </RadioGroup>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name={`methodSettings.${index}.referralReward`}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="flex items-center gap-2">
+                    Referral Reward Amount
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Fixed amount awarded for each successful referral</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground mr-2">
+                        SOL
+                      </span>
+                      <Input
+                        type="number"
+                        step="0.0001"
+                        placeholder="0.01"
+                        className="pl-14"
+                        {...field}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value);
+                          field.onChange(value);
+                          form.trigger(`methodSettings.${index}.referralReward`);
+                        }}
+                      />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {form.watch(`methodSettings.${index}.strategy`) === "long_term" && (
+              <FormField
+                control={form.control}
+                name={`methodSettings.${index}.dripDays`}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Duration (days)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        {...field}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          field.onChange(value);
+                          form.trigger(`methodSettings.${index}.dripDays`);
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                    {field.value && form.watch(`methodSettings.${index}.referralReward`) && (
+                      <FormDescription>
+                        Distribution rate: {(form.watch(`methodSettings.${index}.referralReward`) / (field.value * 24)).toFixed(4)} tokens per hour
+                      </FormDescription>
+                    )}
+                  </FormItem>
+                )}
+              />
+            )}
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold">Volume Boost Settings</h4>
+                <FormField
+                  control={form.control}
+                  name={`methodSettings.${index}.enableVolumeBoost`}
+                  render={({ field }) => (
+                    <FormItem className="flex items-center space-x-2">
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <FormLabel className="text-sm font-normal">Enable</FormLabel>
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {form.watch(`methodSettings.${index}.enableVolumeBoost`) && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name={`methodSettings.${index}.volumeThreshold`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Threshold Count</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            {...field}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value);
+                              field.onChange(value);
+                              form.trigger(`methodSettings.${index}.volumeThreshold`);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name={`methodSettings.${index}.volumeBonus`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Additional Reward (SOL)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            {...field}
+                            onChange={(e) => {
+                              const value = parseFloat(e.target.value);
+                              field.onChange(value);
+                              form.trigger(`methodSettings.${index}.volumeBonus`);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold">Time Boost Settings</h4>
+                <FormField
+                  control={form.control}
+                  name={`methodSettings.${index}.enableTimeBoost`}
+                  render={({ field }) => (
+                    <FormItem className="flex items-center space-x-2">
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <FormLabel className="text-sm font-normal">Enable</FormLabel>
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {form.watch(`methodSettings.${index}.enableTimeBoost`) && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name={`methodSettings.${index}.timeTarget`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Target Referral Count</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            {...field}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value);
+                              field.onChange(value);
+                              form.trigger(`methodSettings.${index}.timeTarget`);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name={`methodSettings.${index}.timeWindow`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Time Window (minutes)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            {...field}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value);
+                              field.onChange(value);
+                              form.trigger(`methodSettings.${index}.timeWindow`);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name={`methodSettings.${index}.timeBonus`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bonus Reward (SOL)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            {...field}
+                            onChange={(e) => {
+                              const value = parseFloat(e.target.value);
+                              field.onChange(value);
+                              form.trigger(`methodSettings.${index}.timeBonus`);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderStep3 = () => {
+    const methodSettings = form.watch("methodSettings");
+    const escrowAmount = form.watch("escrowAmount");
+    
+    const calculateTotalRewards = () => {
+      return methodSettings.reduce((total, method) => {
+        const baseReward = method.strategy === "short_term" 
+          ? (method.referralReward || 0)
+          : 0;
+        const volumeBoost = method.enableVolumeBoost ? (method.volumeBonus || 0) : 0;
+        const timeBoost = method.enableTimeBoost ? (method.timeBonus || 0) : 0;
+        return total + baseReward + volumeBoost + timeBoost;
+      }, 0);
+    };
+
+    return (
+      <div className="space-y-6">
+        <FormField
+          control={form.control}
+          name="escrowAmount"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Escrow Amount (SOL)</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  step="0.1"
+                  {...field}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value);
+                    field.onChange(value);
+                    form.trigger("escrowAmount");
+                  }}
+                />
+              </FormControl>
+              <FormDescription>
+                This amount will be used to fund rewards for your referral program
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <div className="bg-muted p-4 rounded-lg space-y-2">
+          <h4 className="font-medium">Summary</h4>
+          <p className="text-sm text-muted-foreground">
+            Total potential rewards per referral: {calculateTotalRewards()} SOL
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Escrow amount: {escrowAmount} SOL
+          </p>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="min-h-screen py-12">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 py-12">
       <div className="max-w-3xl mx-auto px-4">
         <Link href="/" className="inline-flex items-center text-primary mb-6">
           <ArrowLeft className="h-4 w-4 mr-2" />
@@ -132,310 +622,42 @@ export default function ProjectRegistration() {
             <CardTitle>Project Registration</CardTitle>
           </CardHeader>
           <CardContent>
+            {renderStepIndicator()}
+            
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <FormField
-                  control={form.control}
-                  name="idlFile"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>IDL File</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="file"
-                          accept=".json"
-                          onChange={handleIdlUpload}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Upload your program&apos;s IDL file
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {currentStep === 1 && renderStep1()}
+                {currentStep === 2 && renderStep2()}
+                {currentStep === 3 && renderStep3()}
 
-                <FormField
-                  control={form.control}
-                  name="methodSignatures"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Rewardable Methods</FormLabel>
-                      <Select
-                        onValueChange={(value) =>
-                          field.onChange([...field.value, value])
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select methods" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {idlMethods.map((method) => (
-                            <SelectItem key={method} value={method}>
-                              {method}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
+                <div className="flex justify-between pt-6">
+                  {currentStep > 1 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleBack}
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Back
+                    </Button>
                   )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="escrowAmount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Escrow Amount (SOL)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.1"
-                          {...field}
-                          onChange={(e) =>
-                            field.onChange(parseFloat(e.target.value))
-                          }
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="strategy"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Reward Strategy</FormLabel>
-                      <FormControl>
-                        <RadioGroup
-                          onValueChange={field.onChange}
-                          defaultValue={field.value}
-                          className="flex space-x-4"
-                        >
-                          <FormItem className="flex items-center space-x-2">
-                            <FormControl>
-                              <RadioGroupItem value="short_term" />
-                            </FormControl>
-                            <FormLabel className="font-normal">
-                              Short Term
-                            </FormLabel>
-                          </FormItem>
-                          <FormItem className="flex items-center space-x-2">
-                            <FormControl>
-                              <RadioGroupItem value="long_term" />
-                            </FormControl>
-                            <FormLabel className="font-normal">
-                              Long Term
-                            </FormLabel>
-                          </FormItem>
-                        </RadioGroup>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {strategy === "short_term" && (
-                  <FormField
-                    control={form.control}
-                    name="referralReward"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center gap-2">
-                          Referral Reward Amount
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Fixed amount awarded for each successful referral</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                              $
-                            </span>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="50.00"
-                              className="pl-7"
-                              {...field}
-                              onChange={(e) =>
-                                field.onChange(parseFloat(e.target.value))
-                              }
-                            />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                  <Button
+                    type="submit"
+                    className="ml-auto"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : currentStep < 3 ? (
+                      <>
+                        Next
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    ) : (
+                      "Register Project"
                     )}
-                  />
-                )}
-
-                {strategy === "long_term" && (
-                  <>
-                    <FormField
-                      control={form.control}
-                      name="duration"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Duration (days)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              {...field}
-                              onChange={(e) =>
-                                field.onChange(parseInt(e.target.value))
-                              }
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="dripAmount"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Drip Amount (SOL)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              {...field}
-                              onChange={(e) =>
-                                field.onChange(parseFloat(e.target.value))
-                              }
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </>
-                )}
-
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Volume Boost Settings</h3>
-                  <FormField
-                    control={form.control}
-                    name="volumeThreshold"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Threshold Count</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            {...field}
-                            onChange={(e) =>
-                              field.onChange(parseInt(e.target.value))
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="volumeBonus"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Additional Reward (SOL)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            {...field}
-                            onChange={(e) =>
-                              field.onChange(parseFloat(e.target.value))
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  </Button>
                 </div>
-
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Time Boost Settings</h3>
-                  <FormField
-                    control={form.control}
-                    name="timeTarget"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Target Referral Count</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            {...field}
-                            onChange={(e) =>
-                              field.onChange(parseInt(e.target.value))
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="timeWindow"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Time Window (minutes)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            {...field}
-                            onChange={(e) =>
-                              field.onChange(parseInt(e.target.value))
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="timeBonus"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Bonus Reward (SOL)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            {...field}
-                            onChange={(e) =>
-                              field.onChange(parseFloat(e.target.value))
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <Button type="submit" className="w-full">
-                  Register Project
-                </Button>
               </form>
             </Form>
           </CardContent>

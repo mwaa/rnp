@@ -5,7 +5,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -24,14 +23,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { ArrowLeft, Copy } from "lucide-react";
 import Link from "next/link";
 
 const formSchema = z.object({
   project: z.string().min(1, "Please select a project"),
   methodSignature: z.string().min(1, "Please select a method"),
-  rewardShare: z.number().min(0).max(100, "Maximum share is 100%"),
+  rewardShare: z.number().min(0).max(80, "Maximum share is 80%"),
 });
 
 // Mock data - replace with actual data from your backend
@@ -46,8 +45,7 @@ const mockMethods = [
 ];
 
 export default function CreateBlink() {
-  const { connected, publicKey } = useWallet();
-  const { toast } = useToast();
+  const { connected } = useWallet();
   const [referralCode, setReferralCode] = useState("");
   const [estimatedRewards, setEstimatedRewards] = useState({
     referrer: 0,
@@ -70,23 +68,19 @@ export default function CreateBlink() {
         referrer: 0.5,
         referee: 0.5,
       });
-      toast({
-        title: "Success",
+      toast.success("Success",{
         description: "Blink created successfully",
       });
     } catch (error) {
-      toast({
-        title: "Error",
+      toast.error("Error", {
         description: "Failed to create blink",
-        variant: "destructive",
       });
     }
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast({
-      title: "Copied",
+    toast.success("Copied", {
       description: "Copied to clipboard",
     });
   };
@@ -104,17 +98,6 @@ export default function CreateBlink() {
             <CardTitle>Create Blink</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="mb-6">
-              <h3 className="text-sm font-medium mb-2">Wallet Connection</h3>
-              <WalletMultiButton className="!bg-primary hover:!bg-primary/90" />
-              {connected && publicKey && (
-                <p className="text-sm text-muted-foreground mt-2">
-                  Connected: {publicKey.toString().slice(0, 8)}...
-                  {publicKey.toString().slice(-8)}
-                </p>
-              )}
-            </div>
-
             {connected ? (
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
